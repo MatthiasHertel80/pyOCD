@@ -18,6 +18,6 @@ jobs:
       - run: pip install pyinstaller
       - run: pyinstaller --onefile pyocd/__main__.py
       # Optionally verify that it works (provided that it does not need user interaction)
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           path: dist/*
