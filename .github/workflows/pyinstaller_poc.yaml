@@ -1,0 +1,23 @@
+on:
+    push:
+  
+  jobs:
+    build:
+      runs-on: ${{ matrix.os }}
+      strategy:
+        fail-fast: false
+        matrix:
+          os: ['windows-latest', 'ubuntu-latest, 'macos-latest']
+  
+      steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+  
+      - run: pip install pyinstaller
+      - run: pyinstaller --onefile pyocd/__main__.py
+      # Optionally verify that it works (provided that it does not need user interaction)
+      - uses: actions/upload-artifact@v2
+        with:
+          path: dist/*
