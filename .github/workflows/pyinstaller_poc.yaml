@@ -17,7 +17,8 @@ jobs:
   
       - run: pip install pyinstaller
       - run: pyinstaller pyocd.spc
+      - run: ./dist/pyocd/pyocd --version       
       # Optionally verify that it works (provided that it does not need user interaction)
-      - uses: actions/upload-artifact@v4
-        with:
-          path: dist/*
+     # - uses: actions/upload-artifact@v4
+     #   with:
+     #     path: dist/*
