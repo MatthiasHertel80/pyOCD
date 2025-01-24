@@ -1,3 +1,5 @@
+name: PyInstaller release builds
+
 on:
   push:
   workflow_dispatch:
@@ -7,7 +9,7 @@ jobs:
       runs-on: ${{ matrix.os }}
       strategy:
         matrix:
-          os: ["windows-latest", "ubuntu-latest", "macos-latest"]
+          os: [windows-latest, ubuntu-latest, macos-latest]
   
       steps:
       - uses: actions/checkout@v4
