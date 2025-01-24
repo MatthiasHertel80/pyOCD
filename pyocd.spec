@@ -5,13 +5,13 @@ a = Analysis(
     ['pyocd.py'],
     pathex=[],
     binaries=[
-      ('/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/cmsis_pack_manager/cmsis_pack_manager/native.so', 'cmsis_pack_manager')
+    #  ('/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/cmsis_pack_manager/cmsis_pack_manager/native.so', 'cmsis_pack_manager')
     ],
     datas=[
         ('pyocd/debug/sequences/sequences.lark', 'pyocd/debug/sequences'),
         ('pyocd/debug/svd/svd_data.zip', 'pyocd/debug/svd')
     ],
-    hiddenimports=[],
+    hiddenimports=['cmsis_pack_manager'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
