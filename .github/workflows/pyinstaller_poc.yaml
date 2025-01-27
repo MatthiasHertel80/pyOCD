@@ -21,10 +21,12 @@ jobs:
      
       - run: pip install .
 
-      - name: Setup tmate session
-        #uses: mxschmitt/action-tmate@v3
-        run: python get_site-packages.py
-  
+      # Get site-packages directory and save in ENV variable
+      - run: python get_site-packages.py
+   
+      # Test site-packages directory
+      - run: echo ${{ env.SITE_PACKAGES }}
+
       - run: pip install pyinstaller
       - run: pyinstaller pyocd.spec
       - run: ./dist/pyocd/pyocd --version       
