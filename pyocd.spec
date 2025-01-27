@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Get environment variables with defaults
 SITE_PACKAGES = os.getenv('SITE_PACKAGES', '')
-lib_suffix = '.pyd' if sys.platform == 'win32' else '.so'
+lib_suffix = '.so' #'.pyd' if sys.platform == 'win32' else '.so'
 CMSIS_PATH = str(Path(SITE_PACKAGES) / 'cmsis_pack_manager' / 'cmsis_pack_manager' / f'native{lib_suffix}')
 
 a = Analysis(
