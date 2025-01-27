@@ -20,6 +20,9 @@ jobs:
           cache: 'pip' # caching pip dependencies
      
       - run: pip install .
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
   
       - run: pip install pyinstaller
       - run: pyinstaller pyocd.spec
