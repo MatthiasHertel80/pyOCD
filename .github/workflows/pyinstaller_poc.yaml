@@ -1,36 +1,63 @@
-name: PyInstaller release builds
+name: PyInstaller Release Builds
 
 on:
   push:
+    branches: [ main, develop ]
   workflow_dispatch:
-  
+
 jobs:
-    pyinstaller_build:
-      runs-on: ${{ matrix.os }}
-      strategy:
-        fail-fast: false
-        matrix:
-          os: [windows-latest, ubuntu-latest, macos-latest, ubuntu-24.04-arm]
-  
-      steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+  pyinstaller_build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest, ubuntu-24.04-arm]
+        include:
+          - os: windows-latest
+            artifact_name: pyocd-windows
+          - os: ubuntu-latest
+            artifact_name: pyocd-linux
+          - os: macos-latest
+            artifact_name: pyocd-macos
+          - os: ubuntu-24.04-arm
+            artifact_name: pyocd-linux-arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: 'pip' # caching pip dependencies
-     
-      - run: pip install .
+          cache: 'pip'
 
-      # Get site-packages directory and save in ENV variable
-      - run: python get_site-packages.py
-   
-      # Test site-packages directory
-      - run: echo ${{ env.SITE_PACKAGES }}
+      - name: Install package
+        run: pip install .
 
-      - run: pip install pyinstaller
-      - run: pyinstaller pyocd.spec
-      - run: ./dist/pyocd/pyocd --help       
-      # Optionally verify that it works (provided that it does not need user interaction)
-     # - uses: actions/upload-artifact@v4
-     #   with:
-     #     path: dist/*
+      - name: Setup build environment
+        id: setup
+        run: python get_site-packages.py
+
+      - name: Verify environment
+        run: |
+          echo "Site packages: ${{ env.SITE_PACKAGES }}"
+          python -c "import sys; print(sys.version)"
+
+      - name: Build with PyInstaller
+        run: |
+          pip install pyinstaller
+          pyinstaller pyocd.spec
+
+      - name: Test binary
+        run: ./dist/pyocd/pyocd --help
+        if: success()
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/pyocd/*
+          retention-days: 7
