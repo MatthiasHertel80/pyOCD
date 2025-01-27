@@ -1,11 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+import sys
+from pathlib import Path
+
+# Get environment variables with defaults
+SITE_PACKAGES = os.getenv('SITE_PACKAGES', '')
+lib_suffix = '.pyd' if sys.platform == 'win32' else '.so'
+CMSIS_PATH = str(Path(SITE_PACKAGES) / 'cmsis_pack_manager' / 'cmsis_pack_manager' / f'native{lib_suffix}')
 
 a = Analysis(
     ['pyocd.py'],
     pathex=[],
     binaries=[
-    #  ('/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/cmsis_pack_manager/cmsis_pack_manager/native.so', 'cmsis_pack_manager')
+        (CMSIS_PATH, 'cmsis_pack_manager/cmsis_pack_manager')
     ],
     datas=[
         ('pyocd/debug/sequences/sequences.lark', 'pyocd/debug/sequences'),
@@ -26,13 +34,10 @@ pyz = PYZ(a.pure, a.zipped_data)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
-    exclude_binaries=False,
+    exclude_binaries=True,
     name='pyocd',
-    debug=True,
+    debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
@@ -43,12 +48,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
 coll = COLLECT(
     exe,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='pyocd',
+    name='pyocd'
 )
