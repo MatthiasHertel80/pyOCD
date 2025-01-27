@@ -22,7 +22,8 @@ jobs:
       - run: pip install .
 
       - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+        #uses: mxschmitt/action-tmate@v3
+        run: python get_site-packages.py
   
       - run: pip install pyinstaller
       - run: pyinstaller pyocd.spec
