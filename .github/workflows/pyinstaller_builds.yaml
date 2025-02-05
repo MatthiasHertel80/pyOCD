@@ -48,10 +48,10 @@ jobs:
       - name: Build with PyInstaller
         run: |
           pip install pyinstaller
-          pyinstaller pyocd.spec
+          pyinstaller pyocd.spec --log-level=ERROR --clean
 
       - name: Test binary
-        run: ./dist/pyocd/pyocd --help
+        run: ./dist/pyocd_sa/pyocd_sa --help
         if: success()
 
       - name: Upload artifacts
