@@ -182,6 +182,7 @@ class GdbserverSubcommand(SubcommandBase):
                 config_file=self._args.config,
                 no_config=self._args.no_config,
                 pack=self._args.pack,
+                cbuild_run=self._args.cbuild_run,
                 unique_id=self._args.unique_id,
                 target_override=self._args.target_override,
                 frequency=self._args.frequency,
