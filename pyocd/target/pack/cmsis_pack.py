@@ -352,7 +352,7 @@ class CmsisPackDescription:
         return list(map.values())
 
     def _inherit_attributes(self, to_elem: Element, from_elem: Optional[Element]) -> Element:
-        """@brief Add attributes missing from an elemnt but present in another.
+        """@brief Add attributes missing from an element but present in another.
 
         Copy to `to_elem` any attributes defined in `from_elem` but not defined, and therefore overridden,
         in `to_elem`.
