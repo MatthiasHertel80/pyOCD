@@ -68,6 +68,8 @@ class SubcommandBase:
             help="(Deprecated) Send setting to DAPAccess layer.")
         CONFIG_GROUP.add_argument("--pack", metavar="PATH", action="append",
             help="Path to the .pack file for a CMSIS Device Family Pack.")
+        CONFIG_GROUP.add_argument("--cbuild-run", metavar="PATH",
+            help="Path to the .cbuild-run.yml file for CSolution Run and Debug Management.")
 
         # Define common options for all subcommands, including logging options.
         COMMON = argparse.ArgumentParser(description='common',
