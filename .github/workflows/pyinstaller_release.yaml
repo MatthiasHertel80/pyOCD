@@ -10,7 +10,7 @@ on:
 
 jobs:
   release:
-    name: Create Release
+    name: PyInstaller Create GH Release
     # Only run if triggered manually with version
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -25,13 +25,13 @@ jobs:
           pattern: pyocd-*
           path: artifacts
           
-      # Create OS-specific zip files
-      - name: Package Builds
+      # Rename artifacts to include version
+      - name: Rename Build Artifacts
         run: |
           cd artifacts
-          for os in windows linux macos linux-arm64; do
-            if [ -d "pyocd-$os" ]; then
-              zip -r "../pyocd-$os-${{ github.event.inputs.version }}.zip" "pyocd-$os"/*
+          for artifact in pyocd-*; do
+            if [ -d "$artifact" ]; then
+              mv "$artifact" "${artifact}-${{ github.event.inputs.version }}"
             fi
           done
           
