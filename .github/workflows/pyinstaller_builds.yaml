@@ -51,7 +51,7 @@ jobs:
           pyinstaller pyocd.spec --log-level=ERROR --clean
 
       - name: Test binary
-        run: ./dist/pyocd_sa/pyocd_sa --help
+        run: ./dist/pyocd/pyocd --help
         if: success()
 
       - name: Upload artifacts
@@ -59,5 +59,5 @@ jobs:
         if: success()
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/pyocd_sa/*
+          path: dist/pyocd/*
           retention-days: 7
