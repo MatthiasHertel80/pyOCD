@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import get_package_paths, collect_entry_point, coll
 
 # --- Configuration ---
 SITE_PACKAGES = os.getenv('SITE_PACKAGES', '')
-APP_NAME = 'pyocd_sa'
+APP_NAME = 'pyocd'
 DEBUG = False
 
 # --- Entry Points ---
