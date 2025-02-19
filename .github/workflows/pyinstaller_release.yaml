@@ -24,6 +24,13 @@ jobs:
         with:
           pattern: pyocd-*
           path: artifacts
+          merge-multiple: true
+          debug: true  # Add debug logging
+
+      - name: List artifacts
+        run: |
+          ls -la artifacts/
+          find artifacts -type f
           
       # Rename artifacts to include version
       - name: Rename Build Artifacts
