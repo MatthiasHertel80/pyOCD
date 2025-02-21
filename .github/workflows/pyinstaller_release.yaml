@@ -1,0 +1,57 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    name: PyInstaller Create GH Release
+    # Only run if triggered manually with version
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Download artifacts from previous build
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pyocd-*
+          path: artifacts
+          merge-multiple: true
+          debug: true  # Add debug logging
+
+      - name: List artifacts
+        run: |
+          ls -la artifacts/
+          find artifacts -type f
+          
+      # Rename artifacts to include version
+      - name: Rename Build Artifacts
+        run: |
+          cd artifacts
+          for artifact in pyocd-*; do
+            if [ -d "$artifact" ]; then
+              mv "$artifact" "${artifact}-${{ github.event.inputs.version }}"
+            fi
+          done
+          
+      # Create Release
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            pyocd-*-${{ github.event.inputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
