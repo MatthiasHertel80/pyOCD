@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v1.0.0)'
+        description: 'Release version <M>.<m>.<p>-standalone[-<feature>][+<build>]'
         required: true
         type: string
 
@@ -17,6 +17,14 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+
+      # Check if release version is valid 
+      - name: Check Version
+        run: |
+          if [[ ! ${{ github.event.inputs.version }} =~ ^[0-9]+\.[0-9]+\.[0-9]+(-standalone)?(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$ ]]; then
+            echo "Invalid version format: ${{ github.event.inputs.version }}"
+            exit 1
+          fi
       
       # Download artifacts from previous build
       - name: Download artifacts
