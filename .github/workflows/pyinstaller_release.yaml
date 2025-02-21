@@ -41,6 +41,16 @@ jobs:
               mv "$artifact" "${artifact}-${{ github.event.inputs.version }}"
             fi
           done
+
+      # Add a CHECKSUM.TXT file to the artifacts with SHA256 checksums
+      - name: Create Checksums
+        run: |
+          cd artifacts
+          for artifact in pyocd-*; do
+            if [ -d "$artifact" ]; then
+              sha256sum "${artifact}.zip" > "${artifact}.zip.sha256"
+            fi
+          done
           
       # Create Release
       - name: Create Release
