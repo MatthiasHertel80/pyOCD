@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v1.0.0)'
+        description: 'Release version (<M>.<m>.<p>-standalone[-<feature>][+<build>])'
+        required: true
+        type: string
+      runid:
+        description: 'Run ID of the build to release'
         required: true
         type: string
 
@@ -22,10 +26,10 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          run-id: ${{ github.event.inputs.runid }}
           pattern: pyocd-*
           path: artifacts
           merge-multiple: true
-          debug: true  # Add debug logging
 
       - name: List artifacts
         run: |
@@ -39,6 +43,18 @@ jobs:
           for artifact in pyocd-*; do
             if [ -d "$artifact" ]; then
               mv "$artifact" "${artifact}-${{ github.event.inputs.version }}"
+            fi
+          done
+
+      # Add a README file to the artifacts
+      - name: Create SHA256 checksums
+        run: |
+          cd artifacts
+          for artifact in pyocd-*; do
+            if [ -d "$artifact" ]; then
+              cd "$artifact"
+              sha256sum * > CHECKSUMS.txt
+              cd ..
             fi
           done
           
