@@ -7,6 +7,10 @@ on:
         description: 'Release version <M>.<m>.<p>-standalone[-<feature>][+<build>]'
         required: true
         type: string
+      run-id:
+        description: 'Run ID of the build to release'
+        required: true
+        type: string
 
 jobs:
   release:
@@ -30,10 +34,10 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          run-id: ${{ github.event.inputs.run-id }}
           pattern: pyocd-*
           path: artifacts
           merge-multiple: true
-          debug: true  # Add debug logging
 
       - name: List artifacts
         run: |
