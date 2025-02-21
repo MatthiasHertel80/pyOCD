@@ -35,7 +35,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ github.event.inputs.run-id }}
-          pattern: pyocd-*
           path: artifacts
           merge-multiple: true
 
