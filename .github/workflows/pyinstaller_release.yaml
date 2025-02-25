@@ -12,6 +12,9 @@ on:
         required: true
         type: string
 
+permissions:
+  actions: read
+
 jobs:
   release:
     name: PyInstaller Create GH Release
@@ -36,15 +39,24 @@ jobs:
           echo "Repository: ${{ github.repository }}"
           echo "Workflow: ${{ github.workflow }}"
           
-      - name: Download artifacts
+      - name: Get Latest Run ID
+        id: get_run_id
+        uses: octokit/request-action@v2.x
+        with:
+          route: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          workflow_id: workflow-a.yml
+          per_page: 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ github.event.inputs.run-id }}
-          name: pyocd-*
+          run-id: ${{ steps.get_run_id.outputs.workflow_runs[0].id }}
           path: artifacts
           merge-multiple: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}  
-
       - name: List artifacts
         run: |
           ls -la artifacts/
