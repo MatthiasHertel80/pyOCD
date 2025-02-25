@@ -40,7 +40,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ github.event.inputs.run-id }}
-          name: pyocd-pyinstaller
+          name: pyocd-*
           path: artifacts
           merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}  
