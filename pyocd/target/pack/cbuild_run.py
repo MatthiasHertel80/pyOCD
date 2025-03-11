@@ -211,6 +211,7 @@ class CbuildRun:
         """
         self._vars = None
         self._sequences = None
+        self._debug = None
         self._memory_map: Optional[MemoryMap] = None
         self._valid_dps: List[int] = []
         self._apids: Dict[int, APAddressBase] = {}
@@ -353,6 +354,14 @@ class CbuildRun:
         return {}
 
     @property
+    def debug(self) -> dict:
+        if self._valid and ('debug' in self._data['cbuild-run']):
+            if self._debug is None:
+                self._debug = self._data['cbuild-run'].get('debug', {})
+            return self._debug
+        return {}
+
+    @property
     def device_pack(self) -> list:
         """@brief Device Pack (DFP).
         @return Value of 'device-pack'.
@@ -460,11 +469,10 @@ class CbuildRun:
         self._memory_map = MemoryMap(regions)
 
     def _build_valid_dps(self) -> None:
-        if 'debugger' in self._data['cbuild-run']:
-            for debugger in self._data['cbuild-run']['debugger']:
-                dp = debugger.get('dp', None)
-                if dp is not None:
-                    self._valid_dps.append(dp)
+        if 'debug' in self._data['cbuild-run']:
+            debug_dps = self._data['cbuild-run']['debug'].get('dp', {})
+            for dp in debug_dps:
+                self._valid_dps.append(dp)
         if not self._valid_dps:
             # Use default __dp of 0.
             self._valid_dps.append(0)
@@ -472,36 +480,28 @@ class CbuildRun:
     def _build_aps_map(self) -> None:
         self._built_apid_map = True
 
-        if 'processor' in self._data['cbuild-run']:
-            for processor in self._data['cbuild-run']['processor']:
-                if 'pname' in processor:
-                    pname = processor['pname']
+        if 'debug' in self._data['cbuild-run']:
+            debug_aps = self._data['cbuild-run']['debug'].get('ap', {})
+            reset_sequence = self._data['cbuild-run']['debug'].get('defaultResetSequence', 'ResetSystem')
+
+            for ap in debug_aps:
+                id = ap['id']
+                pname = ap.get('pname', None)
+                if pname is None:
+                    pname = self._data['cbuild-run']['processor']['dcore']
+
+                dp = ap.get('dp', 0)
+                if dp not in self._valid_dps:
+                    LOG.warning(f"ap ({id}): dp ({dp}) attribute is invalid")
+
+                if 'address' in ap:
+                    ap_address = APv2Address(ap['address'], dp, id)
+                elif 'index' in ap:
+                    ap_address = APv1Address(ap['index'], dp, id)
                 else:
-                    pname = processor['core']
+                    raise exceptions.InternalError(f"Invalid accessport ({id})")
 
-                address = 0
-                if 'accessports' in processor:
-                    for accessport in processor['accessports']:
-                        ap_dp = accessport.get('dp', 0)
-                        if ap_dp not in self.valid_dps:
-                            LOG.warning(f"dp attribute is invalid ({ap_dp})")
-                        apid = accessport['apid']
-
-                        #APv2
-                        if 'address' in accessport:
-                            address = accessport['address']
-                            ap_address = APv2Address(accessport['address'], ap_dp, apid)
-                        elif 'index' in accessport:
-                            ap_address = APv1Address(accessport['index'], ap_dp, apid)
-                        else:
-                            raise exceptions.InternalError("Invalid accessport")
-
-                        # Save this AP address.
-                        self._apids[apid] = ap_address
-                else:
-                    # Otherwise define a default AP #0.
-                    ap_address = APv1Address(0)
-
+                self._apids[id] = ap_address
                 svd_path = None
                 for item in self.system_descriptions:
                     if item['type'] == 'svd':
@@ -510,22 +510,17 @@ class CbuildRun:
                         svd_path = os.path.expandvars(item['file'])
                         break
 
-                reset_sequence = processor.get('resetsequence', 'ResetSystem')
                 self._processors_map[pname] = ProcessorInfo(name=pname,
-                                                          unit=processor.get('punit', 0),
-                                                          total_units=processor.get('punits', 1),
-                                                          ap_address=ap_address,
-                                                          address=address,
-                                                          svd_path=svd_path,
-                                                          default_reset_sequence=reset_sequence)
+                                                            # unit=processor.get('punit', 0), #TODO
+                                                            # total_units=processor.get('punits', 1), #TODO
+                                                            ap_address=ap_address,
+                                                            svd_path=svd_path,
+                                                            default_reset_sequence=reset_sequence)
 
         if not self._processors_map:
             LOG.warning("No 'processor' node was found")
             # Add dummy processor.
-            pname = 'unknown'
-            ap_address = APv1Address(0)
-            self._processors_map[pname] = ProcessorInfo(name=pname,
-                                                       ap_address=ap_address)
+            self._processors_map[pname] = ProcessorInfo(name='unknown', ap_address=APv1Address(0))
 
 
 class CbuildRunSequences:
@@ -588,9 +583,9 @@ class CbuildRunSequences:
         info = elem.get('info', "")
         if any(node in elem for node in self._control_nodes):
             if 'if' in elem:
-                node = IfControl(elem['if'], info)
+                node = IfControl(str(elem['if']), info)
             elif 'while' in elem:
-                node = WhileControl(elem['while'], info, int(elem.get('timeout', "0")))
+                node = WhileControl(str(elem['while']), info, int(elem.get('timeout', 0)))
 
             parent.add_child(node)
 
@@ -745,10 +740,11 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
             protocol = 2
         else:
             protocol = 0 # Error
-        if session.options.get('dap_swj_enable'):
-            protocol |= 1 << 16
-        if session.options.get('dap_swj_use_dormant'):
-            protocol |= 1 << 17
+        if 'config' in self._device.debug:
+            if self._device.debug['config'].get('swj', True):
+                protocol |= 1 << 16
+            if self._device.debug['config'].get('dormant', False):
+                protocol |= 1 << 17
         return protocol
 
     def get_connection_type(self) -> int:
