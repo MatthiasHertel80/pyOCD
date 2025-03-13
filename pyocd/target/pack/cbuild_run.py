@@ -98,6 +98,8 @@ class CbuildRunTargetMethods:
             core_ap_addr = core.ap.address
             try:
                 proc_info = self._cbuild_device.processors_ap_map[core_ap_addr]
+                if proc_info.name == 'Unknown':
+                    proc_info.name = core.name
             except KeyError:
                 LOG.debug("core #%d not specified in DFP", core_num)
                 continue
@@ -209,9 +211,9 @@ class CbuildRun:
         @param self This object.
         @param yml_path Path to the .cbuild-run.yml file.
         """
-        self._vars = None
-        self._sequences = None
-        self._debug = None
+        self._vars: Optional[dict] = None
+        self._sequences: Optional[dict] = None
+        self._debug: Optional[dict] = None
         self._memory_map: Optional[MemoryMap] = None
         self._valid_dps: List[int] = []
         self._apids: Dict[int, APAddressBase] = {}
@@ -479,6 +481,7 @@ class CbuildRun:
 
     def _build_aps_map(self) -> None:
         self._built_apid_map = True
+        self._build_processors_map()
 
         if 'debug' in self._data['cbuild-run']:
             debug_aps = self._data['cbuild-run']['debug'].get('ap', {})
@@ -488,18 +491,26 @@ class CbuildRun:
                 id = ap['id']
                 pname = ap.get('pname', None)
                 if pname is None:
-                    pname = self._data['cbuild-run']['processor']['dcore']
+                    try:
+                        pname = self._data['cbuild-run']['processor'][0]['dcore']
+                    except KeyError:
+                        pname = 'Unknown'
+
+                if pname in self._processors_map:
+                    proc = self._processors_map[pname]
+                else:
+                    proc = ProcessorInfo(name=pname)
 
                 dp = ap.get('dp', 0)
-                if dp not in self._valid_dps:
-                    LOG.warning(f"ap ({id}): dp ({dp}) attribute is invalid")
+                if dp not in self.valid_dps:
+                    dp = 0
 
                 if 'address' in ap:
                     ap_address = APv2Address(ap['address'], dp, id)
                 elif 'index' in ap:
                     ap_address = APv1Address(ap['index'], dp, id)
                 else:
-                    raise exceptions.InternalError(f"Invalid accessport ({id})")
+                    ap_address = APv1Address(0, dp, id)
 
                 self._apids[id] = ap_address
                 svd_path = None
@@ -510,17 +521,29 @@ class CbuildRun:
                         svd_path = os.path.expandvars(item['file'])
                         break
 
-                self._processors_map[pname] = ProcessorInfo(name=pname,
-                                                            # unit=processor.get('punit', 0), #TODO
-                                                            # total_units=processor.get('punits', 1), #TODO
-                                                            ap_address=ap_address,
-                                                            svd_path=svd_path,
-                                                            default_reset_sequence=reset_sequence)
+                proc.ap_address = ap_address
+                proc.svd_path = svd_path
+                proc.default_reset_sequence = reset_sequence
 
+    def _build_processors_map(self) -> None:
+        if 'processor' in self._data['cbuild-run']:
+            for proc in self._data['cbuild-run']['processor']:
+                if 'pname' in proc:
+                    pname = proc['pname']
+                else:
+                    pname = proc['dcore']
+
+                punits = proc.get('punits', 1)
+
+                # Add the processor, with temp AP and base address.
+                self._processors_map[pname] = ProcessorInfo(name=pname,
+                                                            total_units=punits,
+                                                            ap_address=APv1Address(0))
+
+        # At least one processor must have been defined.
         if not self._processors_map:
-            LOG.warning("No 'processor' node was found")
             # Add dummy processor.
-            self._processors_map[pname] = ProcessorInfo(name='unknown', ap_address=APv1Address(0))
+            self._processors_map['Unknown'] = ProcessorInfo(name='Unknown', ap_address=APv1Address(0))
 
 
 class CbuildRunSequences:
@@ -558,9 +581,12 @@ class CbuildRunSequences:
         for debugger in self._cbuild_debugger:
             dbgconf_file = debugger.get('dbgconf', None)
             if dbgconf_file is not None:
-                with open(dbgconf_file) as f:
-                    dbgconf = f.read()
-                    self._debugvars_conf = Block(dbgconf, info='dbgconf')
+                try:
+                    with open(dbgconf_file) as f:
+                        dbgconf = f.read()
+                        self._debugvars_conf = Block(dbgconf, info='dbgconf')
+                except FileNotFoundError:
+                    LOG.warning(f"dbgconf file '{dbgconf_file}' was not found.")
                 break
 
     def _build_sequences(self) -> None:
@@ -745,6 +771,9 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
                 protocol |= 1 << 16
             if self._device.debug['config'].get('dormant', False):
                 protocol |= 1 << 17
+        else:
+            # Default value of 'swj' is 'true'
+            protocol |= 1 << 16
         return protocol
 
     def get_connection_type(self) -> int:
