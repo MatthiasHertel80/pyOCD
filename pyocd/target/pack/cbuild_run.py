@@ -54,7 +54,7 @@ LOG = logging.getLogger(__name__)
 class ProcessorInfo:
     """@brief Descriptor for a processor defined in a DFP."""
     ## The Pname attribute, or Dcore if not Pname was provided.
-    name: str = "unknown"
+    name: str = "Unknown"
     ## PE unit number within an MPCore. For single cores this will be 0.
     unit: int = 0
     ## Total number of cores in an MPCore.
@@ -98,7 +98,7 @@ class CbuildRunTargetMethods:
             core_ap_addr = core.ap.address
             try:
                 proc_info = self._cbuild_device.processors_ap_map[core_ap_addr]
-                if proc_info.name == 'Unknown':
+                if 'Unknown' in proc_info.name:
                     proc_info.name = core.name
             except KeyError:
                 LOG.debug("core #%d not specified in DFP", core_num)
@@ -474,43 +474,45 @@ class CbuildRun:
         if 'debug' in self._data['cbuild-run']:
             debug_dps = self._data['cbuild-run']['debug'].get('dp', {})
             for dp in debug_dps:
-                self._valid_dps.append(dp)
+                self._valid_dps.append(dp['id'])
         if not self._valid_dps:
             # Use default __dp of 0.
             self._valid_dps.append(0)
 
     def _build_aps_map(self) -> None:
         self._built_apid_map = True
-        self._build_processors_map()
 
         if 'debug' in self._data['cbuild-run']:
             debug_aps = self._data['cbuild-run']['debug'].get('ap', {})
-            reset_sequence = self._data['cbuild-run']['debug'].get('defaultResetSequence', 'ResetSystem')
+            reset_sequences = self._data['cbuild-run']['debug'].get('defaultResetSequence', {})
 
             for ap in debug_aps:
-                id = ap['id']
+                id = ap.get('id', 0)
                 pname = ap.get('pname', None)
                 if pname is None:
                     try:
-                        pname = self._data['cbuild-run']['processor'][0]['dcore']
+                        pname = self._data['cbuild-run']['processor'][id]['dcore']
                     except KeyError:
-                        pname = 'Unknown'
+                        pname = f'Unknown{id}'
 
-                if pname in self._processors_map:
-                    proc = self._processors_map[pname]
-                else:
-                    proc = ProcessorInfo(name=pname)
+                reset_sequence = 'ResetSystem'
+                for seq in reset_sequences:
+                    seq_pname = seq.get('pname', None)
+                    if (seq_pname is not None) and (seq_pname == pname):
+                        reset_sequence = seq['sequence']
+                        break
 
                 dp = ap.get('dp', 0)
                 if dp not in self.valid_dps:
                     dp = 0
 
+                #TODO support for parent 'apid'
                 if 'address' in ap:
                     ap_address = APv2Address(ap['address'], dp, id)
                 elif 'index' in ap:
                     ap_address = APv1Address(ap['index'], dp, id)
                 else:
-                    ap_address = APv1Address(0, dp, id)
+                    ap_address = APv1Address(id, dp, id)
 
                 self._apids[id] = ap_address
                 svd_path = None
@@ -521,24 +523,10 @@ class CbuildRun:
                         svd_path = os.path.expandvars(item['file'])
                         break
 
-                proc.ap_address = ap_address
-                proc.svd_path = svd_path
-                proc.default_reset_sequence = reset_sequence
-
-    def _build_processors_map(self) -> None:
-        if 'processor' in self._data['cbuild-run']:
-            for proc in self._data['cbuild-run']['processor']:
-                if 'pname' in proc:
-                    pname = proc['pname']
-                else:
-                    pname = proc['dcore']
-
-                punits = proc.get('punits', 1)
-
-                # Add the processor, with temp AP and base address.
                 self._processors_map[pname] = ProcessorInfo(name=pname,
-                                                            total_units=punits,
-                                                            ap_address=APv1Address(0))
+                                                            ap_address=ap_address,
+                                                            svd_path=svd_path,
+                                                            default_reset_sequence=reset_sequence)
 
         # At least one processor must have been defined.
         if not self._processors_map:
