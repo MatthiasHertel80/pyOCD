@@ -211,6 +211,8 @@ class CbuildRun:
         @param self This object.
         @param yml_path Path to the .cbuild-run.yml file.
         """
+        self._data: dict = {}
+        self._valid: bool = False
         self._vars: Optional[dict] = None
         self._sequences: Optional[dict] = None
         self._debug: Optional[dict] = None
@@ -221,11 +223,11 @@ class CbuildRun:
         self._processors_map: Dict[str, ProcessorInfo] = {}
         self._processors_ap_map: Dict[APAddressBase, ProcessorInfo] = {}
 
-        self._valid = False
         try:
             with open(yml_path, '+r') as yml_file:
-                self._data = yaml.safe_load(yml_file)
-                if 'cbuild-run' in self._data:
+                yml_data = yaml.safe_load(yml_file)
+                if 'cbuild-run' in yml_data:
+                    self._data = yml_data['cbuild-run']
                     self._valid = True
         except IOError as err:
             LOG.warning("Error attempting to access .cbuild-run.yml file '%s': %s", yml_path, err)
@@ -235,8 +237,8 @@ class CbuildRun:
         """@brief Target.
         @return Value of 'device' without Vendor.
         """
-        if self._valid and ('device' in self._data['cbuild-run']):
-            return self._data['cbuild-run']['device'].split('::')[1]
+        if self._valid and ('device' in self._data):
+            return self._data['device'].split('::')[1]
         else:
             return ''
 
@@ -249,8 +251,8 @@ class CbuildRun:
         """@brief Target Vendor
         @return Value of 'device' without Target.
         """
-        if self._valid and ('device' in self._data['cbuild-run']):
-            return self._data['cbuild-run']['device'].split('::')[0]
+        if self._valid and ('device' in self._data):
+            return self._data['device'].split('::')[0]
         else:
             return ''
 
@@ -277,17 +279,17 @@ class CbuildRun:
 
     @property
     def debug_sequences(self) -> dict:
-        if self._valid and ('debug-sequences' in self._data['cbuild-run']):
+        if self._valid and ('debug-sequences' in self._data):
             if self._sequences is None:
-                self._sequences = self._data['cbuild-run'].get('debug-sequences', {})
+                self._sequences = self._data.get('debug-sequences', {})
             return self._sequences
         return {}
 
     @property
     def debug_vars(self) -> dict:
-        if self._valid and ('debug-vars' in self._data['cbuild-run']):
+        if self._valid and ('debug-vars' in self._data):
             if self._vars is None:
-                self._vars = self._data['cbuild-run'].get('debug-vars', {})
+                self._vars = self._data.get('debug-vars', {})
             return self._vars
         return {}
 
@@ -328,13 +330,13 @@ class CbuildRun:
         @return 'programming' section of cbuild-run.
         """
         if self._valid:
-            return self._data['cbuild-run'].get('programming', {})
+            return self._data.get('programming', {})
         return {}
 
     @property
     def debugger(self) -> dict:
         if self._valid:
-            return self._data['cbuild-run'].get('debugger', {})
+            return self._data.get('debugger', {})
         return {}
 
     @property
@@ -343,7 +345,7 @@ class CbuildRun:
         @return 'system-resources' section of cbuild-run.
         """
         if self._valid:
-            return self._data['cbuild-run'].get('system-resources', {})
+            return self._data.get('system-resources', {})
         return {}
 
     @property
@@ -352,14 +354,14 @@ class CbuildRun:
         @return 'system-descriptions' section of cbuild-run.
         """
         if self._valid:
-            return self._data['cbuild-run'].get('system-descriptions', {})
+            return self._data.get('system-descriptions', {})
         return {}
 
     @property
     def debug(self) -> dict:
-        if self._valid and ('debug' in self._data['cbuild-run']):
+        if self._valid and ('debug' in self._data):
             if self._debug is None:
-                self._debug = self._data['cbuild-run'].get('debug', {})
+                self._debug = self._data.get('debug', {})
             return self._debug
         return {}
 
@@ -368,8 +370,8 @@ class CbuildRun:
         """@brief Device Pack (DFP).
         @return Value of 'device-pack'.
         """
-        if self._valid and ('device-pack' in self._data['cbuild-run']):
-            vendor, _pack = self._data['cbuild-run']['device-pack'].split('::', 1)
+        if self._valid and ('device-pack' in self._data):
+            vendor, _pack = self._data['device-pack'].split('::', 1)
             name, version = _pack.split('@', 1)
             pack = f"${{CMSIS_PACK_ROOT}}/{vendor}/{name}/{version}"
             return [os.path.expandvars(pack)]
@@ -471,8 +473,8 @@ class CbuildRun:
         self._memory_map = MemoryMap(regions)
 
     def _build_valid_dps(self) -> None:
-        if 'debug' in self._data['cbuild-run']:
-            debug_dps = self._data['cbuild-run']['debug'].get('dp', {})
+        if 'debug' in self._data:
+            debug_dps = self._data['debug'].get('dp', {})
             for dp in debug_dps:
                 self._valid_dps.append(dp['id'])
         if not self._valid_dps:
@@ -482,16 +484,16 @@ class CbuildRun:
     def _build_aps_map(self) -> None:
         self._built_apid_map = True
 
-        if 'debug' in self._data['cbuild-run']:
-            debug_aps = self._data['cbuild-run']['debug'].get('ap', {})
-            reset_sequences = self._data['cbuild-run']['debug'].get('defaultResetSequence', {})
+        if 'debug' in self._data:
+            debug_aps = self._data['debug'].get('ap', {})
+            reset_sequences = self._data['debug'].get('defaultResetSequence', {})
 
             for ap in debug_aps:
                 id = ap.get('id', 0)
                 pname = ap.get('pname', None)
                 if pname is None:
                     try:
-                        pname = self._data['cbuild-run']['processor'][id]['dcore']
+                        pname = self._data['processor'][id]['dcore']
                     except KeyError:
                         pname = f'Unknown{id}'
 
