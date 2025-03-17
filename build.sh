@@ -11,4 +11,4 @@ export $(python3 get_site-packages.py)
 
 pyinstaller pyocd.spec --log-level=ERROR --clean
 
-./dist/pyocd_sa/pyocd_sa list --version
+./dist/pyocd/pyocd list --version
