@@ -375,8 +375,7 @@ class CbuildRun:
             name, version = _pack.split('@', 1)
             pack = f"${{CMSIS_PACK_ROOT}}/{vendor}/{name}/{version}"
             return [os.path.expandvars(pack)]
-        else:
-            return []
+        return []
 
     def populate_target(self, target: str) -> None:
         """@brief Generates and populates the target defined by the .cbuild-run.yml file.
@@ -404,10 +403,6 @@ class CbuildRun:
 
     def _build_memory_map(self) -> None:
         """@brief Memory Map generated from cbuild-run file"""
-        # Ensure memory resource exists before proceeding
-        if 'memory' not in self.system_resources:
-            self._memory_map = MemoryMap()
-
         def _sort_algorithms(algorithm: dict) -> tuple:
             # Prioritize default entries
             is_default = algorithm.get('default', False)
@@ -419,7 +414,7 @@ class CbuildRun:
         regions = []
         algorithms = sorted(self.programming, key=_sort_algorithms)
 
-        for memory in self.system_resources['memory']:
+        for memory in self.system_resources.get('memory', {}):
             # Determine memory type based on access permissions
             if ('p' in memory['access']):
                 type = MemoryType.DEVICE
@@ -444,18 +439,26 @@ class CbuildRun:
             }
 
             for algorithm in algorithms:
+                if 'pname' in memory and 'pname' in algorithm:
+                    if memory['pname'] != algorithm['pname']:
+                        # Skip this algorithm if 'Pname' exists and does not match
+                        continue
+
                 memory_end = memory['start'] + memory['size']
                 algorithm_end = algorithm['start'] + algorithm['size']
 
-                #TODO Gather all algorithms that cover the memory
                 if (memory['start'] >= algorithm['start']) and (memory_end <= algorithm_end):
-                    if memory.get('pname', None) and algorithm.get('pname', None):
-                        if memory['pname'] != algorithm['pname']:
-                            # Skip this algorithm if 'Pname' exists and does not match
-                            continue
-
-                    # If memory region is within an algorithm range, classify as FLASH
+                    # If whole memory region is within an algorithm range, classify as FLASH
                     type = MemoryType.FLASH
+                elif (algorithm_end >= memory['start']) and (algorithm['start'] <= memory_end):
+                    # If memory region is partially covered with algorithm, classify as FLASH
+                    type = MemoryType.FLASH
+                    # Amend memory size and length to match the algorithm
+                    #TODO Split memory into covered and uncovered section
+                    attrs['start'] = algorithm['start']
+                    attrs['length'] = algorithm['size']
+
+                if type == MemoryType.FLASH:
                     # Add additional attributes related to the algorithm
                     if 'ram-start' in algorithm:
                         attrs['_RAMstart'] = algorithm['ram-start']
