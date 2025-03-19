@@ -296,7 +296,7 @@ class CbuildRun:
     @property
     def valid_dps(self) -> List[int]:
         if not self._valid_dps:
-            self._build_valid_dps()
+            self._build_aps_map()
         return self._valid_dps
 
     @property
@@ -472,51 +472,32 @@ class CbuildRun:
 
         self._memory_map = MemoryMap(regions)
 
-    def _build_valid_dps(self) -> None:
-        if 'debug' in self._data:
-            debug_dps = self._data['debug'].get('dp', {})
-            for dp in debug_dps:
-                self._valid_dps.append(dp['id'])
-        if not self._valid_dps:
-            # Use default __dp of 0.
-            self._valid_dps.append(0)
-
     def _build_aps_map(self) -> None:
         self._built_apid_map = True
 
-        if 'debug' in self._data:
-            debug_aps = self._data['debug'].get('ap', {})
-            reset_sequences = self._data['debug'].get('defaultResetSequence', {})
+        _processors = {}
+        for processor in self.debug.get('processors', {}):
+            apid = processor.get('apid')
+            pname = processor.get('pname', 'Unknown')
+            reset_sequence = processor.get('defaultResetSequence', 'ResetSystem')
+            if apid is not None:
+                _processors[apid] = (pname, reset_sequence)
 
-            for ap in debug_aps:
-                id = ap.get('id', 0)
-                pname = ap.get('pname', None)
-                if pname is None:
-                    try:
-                        pname = self._data['processor'][id]['dcore']
-                    except KeyError:
-                        pname = f'Unknown{id}'
+        for debugport in self.debug.get('debugports', {}):
+            dp = debugport.get('dp', 0)
+            self._valid_dps.append(dp)
+            for accessport in debugport.get('accessports', {}):
+                apid = accessport.get('apid', 0)
 
-                reset_sequence = 'ResetSystem'
-                for seq in reset_sequences:
-                    seq_pname = seq.get('pname', None)
-                    if (seq_pname is not None) and (seq_pname == pname):
-                        reset_sequence = seq['sequence']
-                        break
-
-                dp = ap.get('dp', 0)
-                if dp not in self.valid_dps:
-                    dp = 0
-
-                #TODO support for parent 'apid'
-                if 'address' in ap:
-                    ap_address = APv2Address(ap['address'], dp, id)
-                elif 'index' in ap:
-                    ap_address = APv1Address(ap['index'], dp, id)
+                if 'address' in accessport:
+                    ap_address = APv2Address(accessport['address'], dp, apid)
+                elif 'index' in accessport:
+                    ap_address = APv1Address(accessport['index'], dp, apid)
                 else:
-                    ap_address = APv1Address(id, dp, id)
+                    ap_address = APv1Address(0, dp, apid)
 
-                self._apids[id] = ap_address
+                self._apids[apid] = ap_address
+
                 svd_path = None
                 for item in self.system_descriptions:
                     if item['type'] == 'svd':
@@ -525,11 +506,14 @@ class CbuildRun:
                         svd_path = os.path.expandvars(item['file'])
                         break
 
+                pname, reset_sequence = _processors.get(apid, (f'Unknown{apid}', 'ResetSystem'))
                 self._processors_map[pname] = ProcessorInfo(name=pname,
                                                             ap_address=ap_address,
                                                             svd_path=svd_path,
                                                             default_reset_sequence=reset_sequence)
-
+        if not self._valid_dps:
+            # Use default __dp of 0.
+            self._valid_dps.append(0)
         # At least one processor must have been defined.
         if not self._processors_map:
             # Add dummy processor.
