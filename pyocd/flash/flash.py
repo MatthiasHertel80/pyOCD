@@ -22,6 +22,7 @@ from enum import Enum
 
 from ..core import exceptions
 from ..core.target import Target
+from ..coresight.cortex_m import CortexM
 from ..core.exceptions import (FlashFailure, FlashEraseFailure, FlashProgramFailure)
 from ..utility.mask import (align_down, msb)
 from ..utility.timeout import Timeout
@@ -569,6 +570,9 @@ class Flash:
             data_list.append(self.begin_stack)
         reg_list.append('lr')
         data_list.append(self.flash_algo['load_address'] + 1)
+        if isinstance(self.target.selected_core, CortexM):
+            reg_list.append('xpsr')
+            data_list.append(CortexM.XPSR_THUMB)
         self.target.write_core_registers_raw(reg_list, data_list)
 
         # resume target
