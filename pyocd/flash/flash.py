@@ -568,11 +568,11 @@ class Flash:
         if init:
             reg_list.append('sp')
             data_list.append(self.begin_stack)
-        reg_list.append('lr')
-        data_list.append(self.flash_algo['load_address'] + 1)
-        if isinstance(self.target.selected_core, CortexM):
+        if init and isinstance(self.target.selected_core, CortexM):
             reg_list.append('xpsr')
             data_list.append(CortexM.XPSR_THUMB)
+        reg_list.append('lr')
+        data_list.append(self.flash_algo['load_address'] + 1)
         self.target.write_core_registers_raw(reg_list, data_list)
 
         # resume target
