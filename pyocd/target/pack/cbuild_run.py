@@ -87,10 +87,27 @@ class CbuildRunTargetMethods:
         seq = super(self.__class__, self).create_init_sequence()
         seq.wrap_task('discovery',
             lambda seq: seq.insert_after('create_cores',
+                            ('update_processor_name', self.update_processor_name),
                             ('configure_core_reset', self.configure_core_reset)
                             )
             )
         return seq
+
+    @staticmethod
+    def _cbuild_target_update_processor_name(self) -> None:
+        processors_map = {}
+        for core in self.cores.values():
+            if core.node_name is None:
+                core.node_name = core.name
+
+            for proc in self._cbuild_device.processors_map.values():
+                if ('Unknown' in proc.name) and (proc.ap_address == core.ap.address):
+                    proc.name = core.name
+                    processors_map[core.name] = proc
+                    break
+
+        if processors_map:
+            self._cbuild_device.processors_map = processors_map
 
     @staticmethod
     def _cbuild_target_configure_core_reset(self) -> None: #TODO check and cleanup
@@ -98,10 +115,8 @@ class CbuildRunTargetMethods:
             core_ap_addr = core.ap.address
             try:
                 proc_info = self._cbuild_device.processors_ap_map[core_ap_addr]
-                if 'Unknown' in proc_info.name:
-                    proc_info.name = core.name
             except KeyError:
-                LOG.debug("core #%d not specified in DFP", core_num)
+                LOG.debug("core #%d not specified", core_num)
                 continue
 
             # Get this processor's list of sequences.
@@ -199,7 +214,8 @@ class CbuildRunTargetMethods:
     def _cbuild_target_add_core(_self, core: CoreTarget) -> None:
         """@brief Override to set node name of added core to its pname."""
         pname = _self._cbuild_device.processors_ap_map[cast(CortexM, core).ap.address].name
-        core.node_name = pname
+        if 'Unknown' not in pname:
+            core.node_name = pname
         CoreSightTarget.add_core(_self, core)
 
 
@@ -314,6 +330,10 @@ class CbuildRun:
         if not self._processors_map:
             self._build_aps_map()
         return self._processors_map
+    
+    @processors_map.setter
+    def processors_map(self, map: Dict[str, ProcessorInfo]) -> None:
+        self._processors_map = map
 
     @property
     def processors_ap_map(self) -> Dict[APAddressBase, ProcessorInfo]:
@@ -396,6 +416,7 @@ class CbuildRun:
                            "_cbuild_device": self,
                            "__init__": CbuildRunTargetMethods._cbuild_target_init,
                            "create_init_sequence": CbuildRunTargetMethods._cbuild_target_create_init_sequence,
+                           "update_processor_name" : CbuildRunTargetMethods._cbuild_target_update_processor_name,
                            "configure_core_reset": CbuildRunTargetMethods._cbuild_target_configure_core_reset,
                            "add_core": CbuildRunTargetMethods._cbuild_target_add_core
                 })
