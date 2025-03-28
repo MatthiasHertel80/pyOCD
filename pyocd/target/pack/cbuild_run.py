@@ -235,6 +235,7 @@ class CbuildRun:
         self._memory_map: Optional[MemoryMap] = None
         self._valid_dps: List[int] = []
         self._apids: Dict[int, APAddressBase] = {}
+        self._uses_apid: bool = False
         self._built_apid_map: bool = False
         self._processors_map: Dict[str, ProcessorInfo] = {}
         self._processors_ap_map: Dict[APAddressBase, ProcessorInfo] = {}
@@ -317,7 +318,9 @@ class CbuildRun:
 
     @property
     def uses_apid(self) -> bool:
-        return len(self.apid_map) > 0
+        if not self._built_apid_map:
+            self._build_aps_map()
+        return self._uses_apid
 
     @property
     def apid_map(self) -> Dict[int, APAddressBase]:
@@ -514,6 +517,7 @@ class CbuildRun:
                 apid = accessport.get('apid', 0)
 
                 if 'address' in accessport:
+                    self._uses_apid = True
                     ap_address = APv2Address(accessport['address'], dp, apid)
                 elif 'index' in accessport:
                     ap_address = APv1Address(accessport['index'], dp, apid)
