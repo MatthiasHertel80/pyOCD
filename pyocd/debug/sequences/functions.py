@@ -142,8 +142,11 @@ class DebugSequenceCommonFunctions(DebugSequenceFunctionsDelegate):
 
     def _get_ignore_errors(self) -> bool:
         """@brief Whether the debug sequence has set __errorcontrol to ignore faults."""
-        errcontrol = self.context.get_variable('__errorcontrol')
-        return (errcontrol & 1) == 1
+        errcontrol = self.context.get_variable('__errorcontrol') & 1
+        if errcontrol:
+            # Clear WDATAERR, STICKYORUN, STICKYCMP, and STICKYERR bits of CTRL/STAT Register
+            self.dap_writeabort(0x1E)
+        return errcontrol
 
     def sequence(self, name: str) -> None:
         # This call will raise if the named sequence is invalid. However, we should have already
@@ -332,7 +335,9 @@ class DebugSequenceCommonFunctions(DebugSequenceFunctionsDelegate):
         if mode == DebugProbe.Protocol.SWD:
             self._get_dp().write_reg(self.DP_ABORT, value)
         elif mode == DebugProbe.Protocol.JTAG:
-            # TODO support jtag abort
+            # On a JTAG-DP, for the AP Abort Register:
+            # bit [0], DAPABORT, is the only bit that is defined
+            value &= 1
             self._get_dp().write_reg(self.DP_ABORT, value)
         self.target.flush()
 
