@@ -502,6 +502,16 @@ class CbuildRun:
     def _build_aps_map(self) -> None:
         self._built_apid_map = True
 
+        def get_svd_path(pname: Optional[str] = None) -> Optional[str]:
+            svd_path = None
+            for item in self.system_descriptions:
+                if item['type'] == 'svd':
+                    if (pname is not None) and (item.get('pname') not in (None, pname)):
+                        continue
+                    svd_path = os.path.expandvars(item['file'])
+                    break
+            return svd_path
+
         _processors = {}
         for processor in self.debug.get('processors', {}):
             apid = processor.get('apid')
@@ -525,19 +535,10 @@ class CbuildRun:
                     ap_address = APv1Address(0, dp, apid)
 
                 self._apids[apid] = ap_address
-
-                svd_path = None
-                for item in self.system_descriptions:
-                    if item['type'] == 'svd':
-                        if ('pname' in item) and pname != item['pname']:
-                            continue
-                        svd_path = os.path.expandvars(item['file'])
-                        break
-
                 pname, reset_sequence = _processors.get(apid, (f'Unknown{apid}', 'ResetSystem'))
                 self._processors_map[pname] = ProcessorInfo(name=pname,
                                                             ap_address=ap_address,
-                                                            svd_path=svd_path,
+                                                            svd_path=get_svd_path(pname),
                                                             default_reset_sequence=reset_sequence)
         if not self._valid_dps:
             # Use default __dp of 0.
@@ -545,7 +546,9 @@ class CbuildRun:
         # At least one processor must have been defined.
         if not self._processors_map:
             # Add dummy processor.
-            self._processors_map['Unknown'] = ProcessorInfo(name='Unknown', ap_address=APv1Address(0))
+            self._processors_map['Unknown'] = ProcessorInfo(name='Unknown',
+                                                            ap_address=APv1Address(0),
+                                                            svd_path=get_svd_path())
 
 
 class CbuildRunSequences:
