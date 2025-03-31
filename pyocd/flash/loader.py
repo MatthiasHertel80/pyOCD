@@ -229,7 +229,7 @@ class MemoryLoader:
         """
         while len(data):
             # Look up the memory region for this address.
-            region = self._map.get_region_for_address(address)
+            region = self._map.get_region_for_address(address, self._session.target.selected_core.node_name)
             if region is None:
                 raise ValueError("no memory region defined for address 0x%08x" % address)
 
