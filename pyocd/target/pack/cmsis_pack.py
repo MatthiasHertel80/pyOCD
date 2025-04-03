@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # pyOCD debugger
-# Copyright (c) 2019-2020 Arm Limited
+# Copyright (c) 2019-2020,2025 Arm Limited
 # Copyright (c) 2020 Men Shiyun
 # Copyright (c) 2020 Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V.
 # Copyright (c) 2021-2023 Chris Reed

@@ -1,5 +1,5 @@
 # pyOCD debugger
-# Copyright (c) 2019-2021 Arm Limited
+# Copyright (c) 2019-2021,2025 Arm Limited
 # Copyright (c) 2021 mentha
 # Copyright (c) 2021 Chris Reed
 # Copyright (c) 2022 Harper Weigle

@@ -1,5 +1,5 @@
 # pyOCD debugger
-# Copyright (c) 2006-2013,2018 Arm Limited
+# Copyright (c) 2006-2013,2018,2025 Arm Limited
 # Copyright (c) 2021-2022 Chris Reed
 # Copyright (c) 2023 Benjamin Sølberg
 # SPDX-License-Identifier: Apache-2.0
