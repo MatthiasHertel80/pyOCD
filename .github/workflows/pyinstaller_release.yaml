@@ -7,7 +7,7 @@ on:
 
 jobs:
   trigger-reusable:
-    uses: your-org/your-repo/.github/workflows/reusable-workflow.yml@${{ github.ref_name }}
+    uses: your-org/your-repo/.github/workflows/reusable-workflow.yml@${{github.ref_name}}
     with:
       example-input: "test"
       version: ${{ github.event.release.tag_name }}
@@ -25,4 +25,3 @@ jobs:
             
       - name: List files
         run: ls -l
-        
