@@ -231,7 +231,7 @@ class CbuildRun:
         self._valid: bool = False
         self._vars: Optional[dict] = None
         self._sequences: Optional[dict] = None
-        self._debug: Optional[dict] = None
+        self._debug_topology: Optional[dict] = None
         self._memory_map: Optional[MemoryMap] = None
         self._valid_dps: List[int] = []
         self._apids: Dict[int, APAddressBase] = {}
@@ -254,8 +254,9 @@ class CbuildRun:
         """@brief Target.
         @return Value of 'device' without Vendor.
         """
-        if self._valid and ('device' in self._data):
-            return self._data['device'].split('::')[1]
+        if self._valid:
+            device = self._data.get('device', '')
+            return device.split('::')[1] if '::' in device else device
         else:
             return ''
 
@@ -269,7 +270,8 @@ class CbuildRun:
         @return Value of 'device' without Target.
         """
         if self._valid and ('device' in self._data):
-            return self._data['device'].split('::')[0]
+            device = self._data.get('device', '')
+            return device.split('::')[0] if '::' in device else ''
         else:
             return ''
 
@@ -287,9 +289,9 @@ class CbuildRun:
     def svd(self) -> Optional[IO[bytes]]:
         #TODO handle multicore
         try:
-            for item in self.system_descriptions:
-                if item['type'] == 'svd':
-                    svd_path = Path(os.path.expandvars(item['file']))
+            for desc in self.system_descriptions:
+                if desc['type'] == 'svd':
+                    svd_path = Path(os.path.expandvars(desc['file']))
                     return io.BytesIO(svd_path.read_bytes())
         except (KeyError, IndexError):
             return None
@@ -333,7 +335,7 @@ class CbuildRun:
         if not self._processors_map:
             self._build_aps_map()
         return self._processors_map
-    
+
     @processors_map.setter
     def processors_map(self, map: Dict[str, ProcessorInfo]) -> None:
         self._processors_map = map
@@ -359,7 +361,10 @@ class CbuildRun:
     @property
     def debugger(self) -> dict:
         if self._valid:
-            return self._data.get('debugger', {})
+            try:
+                return self._data['debugger']
+            except KeyError:
+                LOG.error("Missing 'debugger' node in cbuild-run.yml")
         return {}
 
     @property
@@ -381,11 +386,11 @@ class CbuildRun:
         return {}
 
     @property
-    def debug(self) -> dict:
-        if self._valid and ('debug' in self._data):
-            if self._debug is None:
-                self._debug = self._data.get('debug', {})
-            return self._debug
+    def debug_topology(self) -> dict:
+        if self._valid and ('debug-topology' in self._data):
+            if self._debug_topology is None:
+                self._debug_topology = self._data.get('debug-topology', {})
+            return self._debug_topology
         return {}
 
     @property
@@ -453,12 +458,8 @@ class CbuildRun:
                 'start': memory['start'],
                 'length': memory['size'],
                 'access': memory['access'],
-                'is_default': memory.get('default', None),
-                'is_boot_memory': memory.get('startup', None),
-                'is_testable': memory.get('default', None),
-                'pname': memory.get('pname', None),
-                'uninit': memory.get('uninit', None),
-                'alias': memory.get('alias', None),
+                'pname': memory.get('pname'),
+                'alias': memory.get('alias'),
                 'sector_size': 0
             }
 
@@ -513,26 +514,26 @@ class CbuildRun:
             return svd_path
 
         _processors = {}
-        for processor in self.debug.get('processors', {}):
+        for processor in self.debug_topology.get('processors', {}):
             apid = processor.get('apid')
             pname = processor.get('pname', 'Unknown')
             reset_sequence = processor.get('defaultResetSequence', 'ResetSystem')
             if apid is not None:
                 _processors[apid] = (pname, reset_sequence)
 
-        for debugport in self.debug.get('debugports', {}):
-            dp = debugport.get('dp', 0)
-            self._valid_dps.append(dp)
+        for debugport in self.debug_topology.get('debugports', {}):
+            dpid = debugport.get('dpid', 0)
+            self._valid_dps.append(dpid)
             for accessport in debugport.get('accessports', {}):
                 apid = accessport.get('apid', 0)
 
                 if 'address' in accessport:
                     self._uses_apid = True
-                    ap_address = APv2Address(accessport['address'], dp, apid)
+                    ap_address = APv2Address(accessport['address'], dpid, apid)
                 elif 'index' in accessport:
-                    ap_address = APv1Address(accessport['index'], dp, apid)
+                    ap_address = APv1Address(accessport['index'], dpid, apid)
                 else:
-                    ap_address = APv1Address(0, dp, apid)
+                    ap_address = APv1Address(0, dpid, apid)
 
                 self._apids[apid] = ap_address
                 pname, reset_sequence = _processors.get(apid, (f'Unknown{apid}', 'ResetSystem'))
@@ -584,7 +585,7 @@ class CbuildRunSequences:
         #TODO how to select correct debugger?
         # Currently first debugger is selected as active
         for debugger in self._cbuild_debugger:
-            dbgconf_file = debugger.get('dbgconf', None)
+            dbgconf_file = debugger.get('dbgconf')
             if dbgconf_file is not None:
                 try:
                     with open(dbgconf_file) as f:
@@ -596,13 +597,13 @@ class CbuildRunSequences:
 
     def _build_sequences(self) -> None:
         for elem in self._cbuild_sequences:
-            name = elem.get('name', None)
+            name = elem.get('name')
             if name is None:
                 LOG.warning("invalid debug sequence; missing name")
                 continue
 
-            pname = elem.get('pname', None)
-            info = elem.get('info', None)
+            pname = elem.get('pname')
+            info = elem.get('info')
             sequence = DebugSequence(name, True, pname, info)
 
             if 'blocks' in elem:
@@ -771,14 +772,10 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
             protocol = 2
         else:
             protocol = 0 # Error
-        if 'config' in self._device.debug:
-            if self._device.debug['config'].get('swj', True):
-                protocol |= 1 << 16
-            if self._device.debug['config'].get('dormant', False):
-                protocol |= 1 << 17
-        else:
-            # Default value of 'swj' is 'true'
+        if self._device.debug_topology.get('swj', True):
             protocol |= 1 << 16
+        if self._device.debug_topology.get('dormant', False):
+            protocol |= 1 << 17
         return protocol
 
     def get_connection_type(self) -> int:
