@@ -1,5 +1,6 @@
 # pyOCD debugger
 # Copyright (c) 2021-2022 Chris Reed
+# Copyright (c) 2025 Arm Limited
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -144,8 +145,12 @@ class DebugSequenceCommonFunctions(DebugSequenceFunctionsDelegate):
         """@brief Whether the debug sequence has set __errorcontrol to ignore faults."""
         errcontrol = self.context.get_variable('__errorcontrol') & 1
         if errcontrol:
-            # Clear WDATAERR, STICKYORUN, STICKYCMP, and STICKYERR bits of CTRL/STAT Register
-            self.dap_writeabort(0x1E)
+            try:
+                # Clear WDATAERR, STICKYORUN, STICKYCMP, and STICKYERR bits of CTRL/STAT Register
+                self.dap_writeabort(0x1E)
+            except exceptions.TransferError:
+                # Suppress TransferError intentionally — this block attempts to recover communication.
+                pass
         return errcontrol
 
     def sequence(self, name: str) -> None:
