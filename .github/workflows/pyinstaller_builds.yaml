@@ -53,11 +53,10 @@ jobs:
       - name: Test binary
         run: ./dist/pyocd/pyocd --help
         if: success()
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: pyocd-${{ matrix.os }}
+          name: pyocd-artifact
           path: dist/pyocd/*
           retention-days: 7

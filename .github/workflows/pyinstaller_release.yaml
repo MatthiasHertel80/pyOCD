@@ -1,97 +1,28 @@
-name: Create Release
+name: Create Release 
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version <M>.<m>.<p>-standalone[-<feature>][+<build>]'
-        required: true
-        type: string
-      run-id:
-        description: 'Run ID of the build to release'
-        required: true
-        type: string
-
-permissions:
-  actions: read
+  release:
+    types:
+      - published
 
 jobs:
-  release:
-    name: PyInstaller Create GH Release
-    # Only run if triggered manually with version
-    if: github.event_name == 'workflow_dispatch'
+  trigger-reusable:
+    uses: your-org/your-repo/.github/workflows/reusable-workflow.yml@${{ github.ref_name }}
+    with:
+      example-input: "test"
+      version: ${{ github.event.release.tag_name }}
+    secrets:
+      ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+
+  retrieve-artifacts:
+    needs: trigger-reusable
     runs-on: ubuntu-latest
-    
     steps:
-      - uses: actions/checkout@v4
-
-      # Check if release version is valid 
-      - name: Check Version
-        run: |
-          if [[ ! ${{ github.event.inputs.version }} =~ ^[0-9]+\.[0-9]+\.[0-9]+(-standalone)?(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$ ]]; then
-            echo "Invalid version format: ${{ github.event.inputs.version }}"
-            exit 1
-          fi
-      
-      - name: Debug Info
-        run: |
-          echo "Run ID: ${{ github.event.inputs.run-id }}"
-          echo "Repository: ${{ github.repository }}"
-          echo "Workflow: ${{ github.workflow }}"
-          
-      - name: Get Latest Run ID
-        id: get_run_id
-        uses: octokit/request-action@v2.x
-        with:
-          route: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs
-          owner: ${{ github.repository_owner }}
-          repo: ${{ github.event.repository.name }}
-          workflow_id: workflow-a.yml
-          per_page: 1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download all artifacts
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ steps.get_run_id.outputs.workflow_runs[0].id }}
-          path: artifacts
-          merge-multiple: true
-      - name: List artifacts
-        run: |
-          ls -la artifacts/
-          find artifacts -type f
-          
-      # Rename artifacts to include version
-      - name: Rename Build Artifacts
-        run: |
-          cd artifacts
-          for artifact in pyocd-*; do
-            if [ -d "$artifact" ]; then
-              mv "$artifact" "${artifact}-${{ github.event.inputs.version }}"
-            fi
-          done
-
-      # Add a CHECKSUM.TXT file to the artifacts with SHA256 checksums
-      - name: Create Checksums
-        run: |
-          cd artifacts
-          for artifact in pyocd-*; do
-            if [ -d "$artifact" ]; then
-              sha256sum "${artifact}.zip" > "${artifact}.zip.sha256"
-            fi
-          done
-          
-      # Create Release
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }}
-          draft: false
-          prerelease: false
-          files: |
-            pyocd-*-${{ github.event.inputs.version }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: pyocd-artifact
+            
+      - name: List files
+        run: ls -l
+        
