@@ -57,6 +57,6 @@ jobs:
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: pyocd-artifact
+          name: pyocd-${{ matrix.os }}
           path: dist/pyocd/*
           retention-days: 7
