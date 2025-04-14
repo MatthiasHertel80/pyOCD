@@ -18,8 +18,9 @@ import logging
 import yaml
 import os
 import io
-from pathlib import Path
 
+from pathlib import Path
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import (cast, Optional, Set, Dict, List, Tuple, IO)
 from .flash_algo import PackFlashAlgo
@@ -432,25 +433,27 @@ class CbuildRun:
 
     def _build_memory_map(self) -> None:
         """@brief Memory Map generated from cbuild-run file"""
-        def _sort_algorithms(algorithm: dict) -> tuple:
-            # Prioritize default entries
-            is_default = algorithm.get('default', False)
-            # Next sort by Pname
-            has_pname = 'pname' in algorithm
-            # Sorting key: False comes first, so default and pname are prioritized
-            return (not is_default, not has_pname)
 
         regions = []
-        algorithms = sorted(self.programming, key=_sort_algorithms)
+        memory_to_process = deepcopy(self.system_resources.get('memory', []))
 
-        for memory in self.system_resources.get('memory', {}):
+        def _memory_slice(start, size) -> None:
+            # Create a copy of current memory and amend region start and length
+            # and add updated memory to list of memories to process.
+            _memory = memory.copy()
+            _memory['start'] = start
+            _memory['size'] = size
+            memory_to_process.append(_memory)
+
+        while memory_to_process:
+            memory = memory_to_process.pop()
             # Determine memory type based on access permissions
-            if ('p' in memory['access']):
-                type = MemoryType.DEVICE
-            elif ('w' in memory['access']):
-                type = MemoryType.RAM
+            if 'p' in memory['access']:
+                memory_type = MemoryType.DEVICE
+            elif 'w' in memory['access']:
+                memory_type = MemoryType.RAM
             else:
-                type = MemoryType.ROM
+                memory_type = MemoryType.ROM
 
             # Define attributes for memory region
             attrs = {
@@ -460,43 +463,57 @@ class CbuildRun:
                 'access': memory['access'],
                 'pname': memory.get('pname'),
                 'alias': memory.get('alias'),
-                'sector_size': 0
             }
 
-            for algorithm in algorithms:
-                if 'pname' in memory and 'pname' in algorithm:
-                    if memory['pname'] != algorithm['pname']:
-                        # Skip this algorithm if 'Pname' exists and does not match
-                        continue
+            if memory.get('defined', False):
+                for algorithm in self.programming:
+                    if 'pname' in memory and 'pname' in algorithm:
+                        if memory['pname'] != algorithm['pname']:
+                            # Skip this algorithm if 'Pname' exists and does not match
+                            continue
 
-                memory_end = memory['start'] + memory['size']
-                algorithm_end = algorithm['start'] + algorithm['size']
+                    memory_end = memory['start'] + memory['size']
+                    algorithm_end = algorithm['start'] + algorithm['size']
 
-                if (memory['start'] >= algorithm['start']) and (memory_end <= algorithm_end):
-                    # If whole memory region is within an algorithm range, classify as FLASH
-                    type = MemoryType.FLASH
-                elif (algorithm_end >= memory['start']) and (algorithm['start'] <= memory_end):
-                    # If memory region is partially covered with algorithm, classify as FLASH
-                    type = MemoryType.FLASH
-                    # Amend memory size and length to match the algorithm
-                    #TODO Split memory into covered and uncovered section
-                    attrs['start'] = algorithm['start']
-                    attrs['length'] = algorithm['size']
+                    if (memory['start'] < algorithm_end) and (algorithm['start'] < memory_end):
+                        # Create a local copy of attributes
+                        flash_attrs = attrs.copy()
+                        # If memory region and algorithm overlap, classify this part of region as FLASH
+                        memory_type = MemoryType.FLASH
+                        # Split memory into covered and uncovered section
+                        flash_start = max(memory['start'], algorithm['start'])
+                        flash_end = min(memory_end, algorithm_end)
+                        if memory['start'] < algorithm['start']:
+                            _memory_slice(memory['start'], algorithm['start'] - memory['start'])
+                        if memory_end > algorithm_end:
+                            _memory_slice(algorithm_end, memory_end - algorithm_end)
+                        # Update flash attributes
+                        flash_attrs['start'] = flash_start
+                        flash_attrs['length'] = flash_end - flash_start
+                        # Amend region 'pname' attribute if it is not already set
+                        if (flash_attrs['pname'] is None) and ('pname' in algorithm):
+                            flash_attrs['pname'] = algorithm['pname']
+                        # Add additional attributes related to the algorithm
+                        if 'ram-start' in algorithm:
+                            flash_attrs['_RAMstart'] = algorithm['ram-start']
+                        if 'ram-size' in algorithm:
+                            flash_attrs['_RAMsize'] = algorithm['ram-size']
+                        if ('_RAMstart' not in flash_attrs) or ('_RAMsize' not in flash_attrs):
+                            LOG.error(f"Flash algorithm '{algorithm['algorithm']}' "
+                                        "has no RAMstart or RAMsize")
+                        flash_attrs['flm'] = PackFlashAlgo(os.path.expandvars(algorithm['algorithm']))
+                        # Set sector size to a fixed value to prevent any possibility of infinite recursion due to
+                        # the default lambdas for sector_size and blocksize returning each other's value.
+                        flash_attrs['sector_size'] = 0
+                        # Create appropriate memory region object and store it
+                        regions.append(MEMORY_TYPE_CLASS_MAP[memory_type](**flash_attrs))
+                        # Stop searching for algorithms if one without pname was found
+                        if flash_attrs['pname'] is None:
+                            break
 
-                if type == MemoryType.FLASH:
-                    # Add additional attributes related to the algorithm
-                    if 'ram-start' in algorithm:
-                        attrs['_RAMstart'] = algorithm['ram-start']
-                    if 'ram-size' in algorithm:
-                        attrs['_RAMsize'] = algorithm['ram-size']
-                    if ('_RAMstart' in attrs) and ('_RAMsize' not in attrs):
-                        LOG.warning(f"Flash algorithm '{algorithm['algorithm']}' "
-                                    "has RAMstart but is missing RAMsize")
-                    attrs['flm'] = PackFlashAlgo(os.path.expandvars(algorithm['algorithm']))
-                    break
-
-            # Create appropriate memory region object and store it
-            regions.append(MEMORY_TYPE_CLASS_MAP[type](**attrs))
+            if memory_type != MemoryType.FLASH:
+                # Create appropriate memory region object and store it
+                regions.append(MEMORY_TYPE_CLASS_MAP[memory_type](**attrs))
 
         self._memory_map = MemoryMap(regions)
 
@@ -517,7 +534,7 @@ class CbuildRun:
         for processor in self.debug_topology.get('processors', {}):
             apid = processor.get('apid')
             pname = processor.get('pname', 'Unknown')
-            reset_sequence = processor.get('defaultResetSequence', 'ResetSystem')
+            reset_sequence = processor.get('reset-sequence', 'ResetSystem')
             if apid is not None:
                 _processors[apid] = (pname, reset_sequence)
 
@@ -698,11 +715,6 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
 
         # Get sequence object.
         seq = self.get_sequence_with_name(name, pname)
-
-        # If the sequence is disabled, we won't run it.
-        if not seq.is_enabled:
-            LOG.debug(f"Not running disabled debug sequence '{name}'{pname_desc}")
-            return None
 
         LOG.debug(f"Running debug sequence '{name}'{pname_desc}")
 
