@@ -299,6 +299,12 @@ class CbuildRun:
             return None
 
     @property
+    def output(self) -> List[dict]:
+        if self._valid:
+            return self._data.get('output', [])
+        return []
+
+    @property
     def debug_sequences(self) -> dict:
         if self._valid and ('debug-sequences' in self._data):
             if self._sequences is None:
@@ -407,30 +413,35 @@ class CbuildRun:
             return [os.path.expandvars(pack)]
         return []
 
-    def populate_target(self, target: str) -> None:
+    def populate_target(self, target: Optional[str] = None) -> None:
         """@brief Generates and populates the target defined by the .cbuild-run.yml file.
         @param self This object.
         @param target Target.
         """
-        if self._valid:
-            if target == normalise_target_type_name(self.target):
+        if not self._valid:
+            return
 
-                # Check if we're even going to populate this target.
-                if target in TARGET:
-                    LOG.debug(f"did not populate target from cbuild-run.yml for device {self.target} because "
-                              f"there is already a {target} target installed")
-                    return
+        if target is None:
+            target = normalise_target_type_name(self.target)
+        elif target != normalise_target_type_name(self.target):
+            return
 
-                # Generate target subclass and install it.
-                tgt = type(target.capitalize(), (CoreSightTarget,), {
-                           "_cbuild_device": self,
-                           "__init__": CbuildRunTargetMethods._cbuild_target_init,
-                           "create_init_sequence": CbuildRunTargetMethods._cbuild_target_create_init_sequence,
-                           "update_processor_name" : CbuildRunTargetMethods._cbuild_target_update_processor_name,
-                           "configure_core_reset": CbuildRunTargetMethods._cbuild_target_configure_core_reset,
-                           "add_core": CbuildRunTargetMethods._cbuild_target_add_core
-                })
-                TARGET[target] = tgt
+        # Check if we're even going to populate this target.
+        if target in TARGET:
+            LOG.debug(f"did not populate target from cbuild-run.yml for device {self.target} because "
+                      f"there is already a {target} target installed")
+            return
+
+        # Generate target subclass and install it.
+        tgt = type(target.capitalize(), (CoreSightTarget,), {
+                    "_cbuild_device": self,
+                    "__init__": CbuildRunTargetMethods._cbuild_target_init,
+                    "create_init_sequence": CbuildRunTargetMethods._cbuild_target_create_init_sequence,
+                    "update_processor_name" : CbuildRunTargetMethods._cbuild_target_update_processor_name,
+                    "configure_core_reset": CbuildRunTargetMethods._cbuild_target_configure_core_reset,
+                    "add_core": CbuildRunTargetMethods._cbuild_target_add_core
+        })
+        TARGET[target] = tgt
 
     def _get_memory_to_process(self) -> List[dict]:
         DEFAULT_MEMORY_MAP = sorted([
