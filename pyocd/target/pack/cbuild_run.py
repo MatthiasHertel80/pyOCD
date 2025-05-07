@@ -22,10 +22,10 @@ import io
 from pathlib import Path
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import (cast, Optional, Set, Dict, List, Tuple, IO)
+from typing import (cast, Optional, Set, Dict, List, Tuple, IO, Any)
 from .flash_algo import PackFlashAlgo
-from .. import (normalise_target_type_name, TARGET)
 from .reset_sequence_maps import (RESET_SEQUENCE_TO_TYPE_MAP, RESET_TYPE_TO_SEQUENCE_MAP)
+from .. import (normalise_target_type_name, TARGET)
 from ...coresight.cortex_m import CortexM
 from ...coresight.coresight_target import CoreSightTarget
 from ...coresight.ap import (APAddressBase, APv1Address, APv2Address)
@@ -36,10 +36,10 @@ from ...core.core_target import CoreTarget
 from ...core.memory_map import (MemoryMap, MemoryType, MEMORY_TYPE_CLASS_MAP)
 from ...utility.sequencer import CallSequence
 from ...probe.debug_probe import DebugProbe
+from ...debug.svd.loader import SVDFile
 from ...debug.sequences.scope import Scope
 from ...debug.sequences.delegates import DebugSequenceDelegate
 from ...debug.sequences.functions import DebugSequenceCommonFunctions
-from ...debug.svd.loader import SVDFile
 from ...debug.sequences.sequences import (
     Block,
     DebugSequence,
@@ -71,11 +71,17 @@ class ProcessorInfo:
 
 
 class CbuildRunTargetMethods:
-    """@brief Namespace for Cbuild-Run target generation utilities
+    """@brief Namespace of static methods to dynamically configure CoreSight targets.
+
+    These methods are used to generate and initialize runtime targets from a .cbuild-run.yml file,
+    including memory mapping, core reset configuration, and processor name updates.
     """
     @staticmethod
     def _cbuild_target_init(self, session: Session) -> None:
-        """@brief Constructor for dynamically created target class."""
+        """@brief Initializes a target dynamically based on a parsed .cbuild-run.yml description.
+
+        Sets memory maps, SVD files, and debug sequence delegates.
+        """
         super(self.__class__, self).__init__(session, self._cbuild_device.memory_map)
         self.vendor = self._cbuild_device.vendor
         self.part_number = self._cbuild_device.target
@@ -84,7 +90,11 @@ class CbuildRunTargetMethods:
 
     @staticmethod
     def _cbuild_target_create_init_sequence(self) -> CallSequence:
-        """@brief Creates an init task to set the default reset type."""
+        """@brief Creates an initialization call sequence for runtime-configured targets.
+
+        Extends the standard discovery sequence to configure processor names
+        and reset behavior after core discovery.
+        """
         seq = super(self.__class__, self).create_init_sequence()
         seq.wrap_task('discovery',
             lambda seq: seq.insert_after('create_cores',
@@ -96,6 +106,10 @@ class CbuildRunTargetMethods:
 
     @staticmethod
     def _cbuild_target_update_processor_name(self) -> None:
+        """@brief Updates processor names post-discovery based on Access Port (AP) addresses.
+
+        Maps discovered cores to known processors to ensure consistent naming.
+        """
         processors_map = {}
         for core in self.cores.values():
             if core.node_name is None:
@@ -111,7 +125,12 @@ class CbuildRunTargetMethods:
             self._cbuild_device.processors_map = processors_map
 
     @staticmethod
-    def _cbuild_target_configure_core_reset(self) -> None: #TODO check and cleanup
+    def _cbuild_target_configure_core_reset(self) -> None:
+        """@brief Configures supported and default reset types for each core.
+
+        Based on the debug sequences defined in the .cbuild-run.yml, updates each core's
+        reset capabilities and selects fallback mechanisms if needed.
+        """
         for core_num, core in self.cores.items():
             core_ap_addr = core.ap.address
             try:
@@ -146,7 +165,7 @@ class CbuildRunTargetMethods:
                 updated_reset_types.add(Target.ResetType.SW_CORE) # type:ignore
 
             core._supported_reset_types = updated_reset_types
-            LOG.debug(f"updated DFP core #{core_num} reset types: {core._supported_reset_types}")
+            LOG.debug("updated DFP core #%d reset types: %s", core_num, core._supported_reset_types)
 
             default_reset_seq = proc_info.default_reset_sequence
 
@@ -221,40 +240,37 @@ class CbuildRunTargetMethods:
 
 
 class CbuildRun:
-    """@brief Parser for the .cbuild-run.yml file (CSolution Run and Debug Management).
-    """
+    """@brief Parser for the .cbuild-run.yml file (CSolution Run and Debug Management)."""
     def __init__(self, yml_path: str) -> None:
-        """@brief Constructor.
-        @param self This object.
-        @param yml_path Path to the .cbuild-run.yml file.
-        """
-        self._data: dict = {}
+        """@brief Reads a .cbuild-run.yml file and validates its content."""
+        self._data: Dict[str, Any] = {}
         self._valid: bool = False
-        self._vars: Optional[dict] = None
-        self._sequences: Optional[dict] = None
-        self._debug_topology: Optional[dict] = None
+        self._vars: Optional[Dict[str, str]] = None
+        self._sequences: Optional[List[dict]] = None
+        self._debug_topology: Optional[Dict[str, Any]] = None
         self._memory_map: Optional[MemoryMap] = None
         self._valid_dps: List[int] = []
         self._apids: Dict[int, APAddressBase] = {}
-        self._uses_apid: bool = False
+        self._uses_apv2: bool = False
         self._built_apid_map: bool = False
         self._processors_map: Dict[str, ProcessorInfo] = {}
         self._processors_ap_map: Dict[APAddressBase, ProcessorInfo] = {}
         self._use_default_memory_map: bool = True
 
         try:
-            with open(yml_path, '+r') as yml_file:
+            with open(yml_path, 'r') as yml_file:
                 yml_data = yaml.safe_load(yml_file)
                 if 'cbuild-run' in yml_data:
                     self._data = yml_data['cbuild-run']
                     self._valid = True
         except IOError as err:
-            LOG.warning("Error attempting to access .cbuild-run.yml file '%s': %s", yml_path, err)
+            LOG.error("Error attempting to access .cbuild-run.yml file '%s': %s", yml_path, err)
 
     @property
     def target(self) -> str:
-        """@brief Target.
-        @return Value of 'device' without Vendor.
+        """@brief Target identifier string.
+
+        Read `device` field from .cbuild-run.yml file, without 'vendor'.
         """
         if self._valid:
             device = self._data.get('device', '')
@@ -268,8 +284,9 @@ class CbuildRun:
 
     @property
     def vendor(self) -> str:
-        """@brief Target Vendor
-        @return Value of 'device' without Target.
+        """@brief Vendor identifier string.
+
+        Read 'vendor' part of `device` field from .cbuild-run.yml file.
         """
         if self._valid and ('device' in self._data):
             device = self._data.get('device', '')
@@ -279,24 +296,35 @@ class CbuildRun:
 
     @property
     def families(self) -> List[str]:
-        return ['']
+        """@brief List of target device families.
+
+        Currently unsupported in cbuild-run. Returns an empty list.
+        """
+        return []
 
     @property
     def memory_map(self) -> MemoryMap:
+        """@brief Returns the parsed memory map for the device.
+
+        Memory regions are constructed by merging default maps with user-defined regions,
+        and flash algorithms are applied where appropriate.
+        """
         if self._memory_map is None:
             self._build_memory_map()
         return self._memory_map
 
     @property
     def svd(self) -> Optional[IO[bytes]]:
-        #TODO handle multicore
+        """@brief File-like object for the device's SVD file."""
+        #TODO handle multicore devices
         try:
             for desc in self.system_descriptions:
                 if desc['type'] == 'svd':
                     svd_path = Path(os.path.expandvars(desc['file']))
                     return io.BytesIO(svd_path.read_bytes())
         except (KeyError, IndexError):
-            return None
+            LOG.error("Could not locate SVD in cbuild-run system-descriptions.")
+        return None
 
     @property
     def output(self) -> List[dict]:
@@ -305,15 +333,17 @@ class CbuildRun:
         return []
 
     @property
-    def debug_sequences(self) -> dict:
+    def debug_sequences(self) -> List[dict]:
+        """@brief Debug sequences node."""
         if self._valid and ('debug-sequences' in self._data):
             if self._sequences is None:
-                self._sequences = self._data.get('debug-sequences', {})
+                self._sequences = self._data.get('debug-sequences', [])
             return self._sequences
-        return {}
+        return []
 
     @property
-    def debug_vars(self) -> dict:
+    def debug_vars(self) -> Dict[str, str]:
+        """@brief Debug variables."""
         if self._valid and ('debug-vars' in self._data):
             if self._vars is None:
                 self._vars = self._data.get('debug-vars', {})
@@ -322,34 +352,39 @@ class CbuildRun:
 
     @property
     def valid_dps(self) -> List[int]:
+        """@brief List of valid debug ports."""
         if not self._valid_dps:
             self._build_aps_map()
         return self._valid_dps
 
     @property
     def uses_apid(self) -> bool:
+        """@brief Accessport V2 apid is used."""
         if not self._built_apid_map:
             self._build_aps_map()
-        return self._uses_apid
+        return self._uses_apv2
 
     @property
     def apid_map(self) -> Dict[int, APAddressBase]:
+        """@brief Map of apid and AP address objects."""
         if not self._built_apid_map:
             self._build_aps_map()
         return self._apids
 
     @property
     def processors_map(self) -> Dict[str, ProcessorInfo]:
+        """@brief Map of processor names and processor info objects."""
         if not self._processors_map:
             self._build_aps_map()
         return self._processors_map
 
     @processors_map.setter
-    def processors_map(self, map: Dict[str, ProcessorInfo]) -> None:
-        self._processors_map = map
+    def processors_map(self, proc_map: Dict[str, ProcessorInfo]) -> None:
+        self._processors_map = proc_map
 
     @property
     def processors_ap_map(self) -> Dict[APAddressBase, ProcessorInfo]:
+        """@brief Map of AP address objects and processor info objects."""
         if not self._processors_ap_map:
             self._processors_ap_map = {
                 proc.ap_address: proc
@@ -358,43 +393,36 @@ class CbuildRun:
         return self._processors_ap_map
 
     @property
-    def programming(self) -> dict:
-        """@brief Programming
-        @return 'programming' section of cbuild-run.
-        """
+    def programming(self) -> List[dict]:
+        """@brief Programming section of cbuild-run."""
         if self._valid:
-            return self._data.get('programming', {})
+            return self._data.get('programming', [])
+        return []
+
+    @property
+    def debugger(self) -> Dict[str, Any]:
+        """@brief Debugger section of cbuild-run."""
+        if self._valid:
+            return self._data.get('debugger', {})
         return {}
 
     @property
-    def debugger(self) -> dict:
-        if self._valid:
-            try:
-                return self._data['debugger']
-            except KeyError:
-                LOG.error("Missing 'debugger' node in cbuild-run.yml")
-        return {}
-
-    @property
-    def system_resources(self) -> dict:
-        """@brief System Resources
-        @return 'system-resources' section of cbuild-run.
-        """
+    def system_resources(self) -> Dict[str, list]:
+        """@brief System Resources section of cbuild-run."""
         if self._valid:
             return self._data.get('system-resources', {})
         return {}
 
     @property
-    def system_descriptions(self) -> dict:
-        """@brief System Descriptions
-        @return 'system-descriptions' section of cbuild-run.
-        """
+    def system_descriptions(self) -> List[dict]:
+        """@brief System Descriptions section of cbuild-run."""
         if self._valid:
-            return self._data.get('system-descriptions', {})
-        return {}
+            return self._data.get('system-descriptions', [])
+        return []
 
     @property
-    def debug_topology(self) -> dict:
+    def debug_topology(self) -> Dict[str, Any]:
+        """@brief Debug Topology section of cbuild-run."""
         if self._valid and ('debug-topology' in self._data):
             if self._debug_topology is None:
                 self._debug_topology = self._data.get('debug-topology', {})
@@ -402,10 +430,8 @@ class CbuildRun:
         return {}
 
     @property
-    def device_pack(self) -> list:
-        """@brief Device Pack (DFP).
-        @return Value of 'device-pack'.
-        """
+    def device_pack(self) -> List[str]:
+        """@brief Value of 'device-pack' (DFP) prefixed with CMSIS_PACK_ROOT."""
         if self._valid and ('device-pack' in self._data):
             vendor, _pack = self._data['device-pack'].split('::', 1)
             name, version = _pack.split('@', 1)
@@ -414,10 +440,7 @@ class CbuildRun:
         return []
 
     def populate_target(self, target: Optional[str] = None) -> None:
-        """@brief Generates and populates the target defined by the .cbuild-run.yml file.
-        @param self This object.
-        @param target Target.
-        """
+        """@brief Generates and populates the target defined by the .cbuild-run.yml file."""
         if not self._valid:
             return
 
@@ -428,8 +451,8 @@ class CbuildRun:
 
         # Check if we're even going to populate this target.
         if target in TARGET:
-            LOG.debug(f"did not populate target from cbuild-run.yml for device {self.target} because "
-                      f"there is already a {target} target installed")
+            LOG.debug("did not populate target from cbuild-run.yml for device %s because "
+                      "there is already a %s target installed", self.target, target)
             return
 
         # Generate target subclass and install it.
@@ -514,12 +537,14 @@ class CbuildRun:
             return defined_memory
 
     def _build_memory_map(self) -> None:
-        """@brief Memory Map generated from cbuild-run file"""
+        """@brief Constructs the device's memory map including flash and RAM segmentation.
 
+        Processes defined regions, fills gaps, and handles flash algorithm overlays.
+        """
         regions = []
         memory_to_process = self._get_memory_to_process()
 
-        def _memory_slice(start, size) -> None:
+        def _memory_slice(memory: dict, start: int, size: int) -> None:
             # Create a copy of current memory and amend region start and length
             # and add updated memory to list of memories to process.
             _memory = memory.copy()
@@ -566,9 +591,9 @@ class CbuildRun:
                         flash_start = max(memory['start'], algorithm['start'])
                         flash_end = min(memory_end, algorithm_end)
                         if memory['start'] < algorithm['start']:
-                            _memory_slice(memory['start'], algorithm['start'] - memory['start'])
+                            _memory_slice(memory, memory['start'], algorithm['start'] - memory['start'])
                         if memory_end > algorithm_end:
-                            _memory_slice(algorithm_end, memory_end - algorithm_end)
+                            _memory_slice(memory, algorithm_end, memory_end - algorithm_end)
                         # Update flash attributes
                         flash_attrs['start'] = flash_start
                         flash_attrs['length'] = flash_end - flash_start
@@ -581,8 +606,7 @@ class CbuildRun:
                         if 'ram-size' in algorithm:
                             flash_attrs['_RAMsize'] = algorithm['ram-size']
                         if ('_RAMstart' not in flash_attrs) or ('_RAMsize' not in flash_attrs):
-                            LOG.error(f"Flash algorithm '{algorithm['algorithm']}' "
-                                        "has no RAMstart or RAMsize")
+                            LOG.error("Flash algorithm '%s' has no RAMstart or RAMsize", algorithm['algorithm'])
                         flash_attrs['flm'] = PackFlashAlgo(os.path.expandvars(algorithm['algorithm']))
                         # Set sector size to a fixed value to prevent any possibility of infinite recursion due to
                         # the default lambdas for sector_size and blocksize returning each other's value.
@@ -600,6 +624,10 @@ class CbuildRun:
         self._memory_map = MemoryMap(regions)
 
     def _build_aps_map(self) -> None:
+        """@brief Builds mappings between Access Ports (APs) and processor descriptions.
+
+        Populates valid APs, processor maps, and resolves SVD paths for debug topology.
+        """
         self._built_apid_map = True
 
         def get_svd_path(pname: Optional[str] = None) -> Optional[str]:
@@ -627,7 +655,7 @@ class CbuildRun:
                 apid = accessport.get('apid', 0)
 
                 if 'address' in accessport:
-                    self._uses_apid = True
+                    self._uses_apv2 = True
                     ap_address = APv2Address(accessport['address'], dpid, apid)
                 elif 'index' in accessport:
                     ap_address = APv1Address(accessport['index'], dpid, apid)
@@ -652,6 +680,7 @@ class CbuildRun:
 
 
 class CbuildRunSequences:
+    """@brief Parses debug sequences and debug variable definitions from .cbuild-run.yml."""
     def __init__(self, device: CbuildRun) -> None:
         self._cbuild_vars = device.debug_vars
         self._cbuild_debugger = device.debugger
@@ -734,6 +763,13 @@ class CbuildRunSequences:
 
 
 class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
+    """@brief Delegate class for running debug sequences parsed from cbuild-run files.
+
+    Responsible for:
+    - Managing debug variables and overrides from .dbgconf files.
+    - Providing runtime execution contexts for sequences.
+    - Handling pyOCD wire protocols and connection parameters.
+    """
     ## Map from pyocd reset types to the __connection variable reset type field.
     # 0=error, 1=hw, 2=SYSRESETREQ, 3=VECTRESET
     RESET_TYPE_MAP = {
@@ -784,11 +820,12 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
         if LOG.isEnabledFor(logging.INFO):
             for name in sorted(self._debugvars.variables):
                 value = self._debugvars.get(name)
-                LOG.info(f"debugvar '{name}' = {value:#x} ({value:d})")
+                LOG.info("debugvar '%s' = %#x (%d)", name, value, value)
 
         return self._debugvars
 
     def run_sequence(self, name: str, pname: Optional[str] = None) -> Optional[Scope]:
+        """@brief Executes a debug sequence by name for the specified processor."""
         pname_desc = f" ({pname})" if (pname and LOG.isEnabledFor(logging.DEBUG)) else ""
 
         # Error out for invalid sequence.
@@ -798,7 +835,7 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
         # Get sequence object.
         seq = self.get_sequence_with_name(name, pname)
 
-        LOG.debug(f"Running debug sequence '{name}'{pname_desc}")
+        LOG.debug("Running debug sequence '%s'%s", name, pname_desc)
 
         # Create runtime context and contextified functions instance.
         context = DebugSequenceExecutionContext(self._session, self, pname)
@@ -823,9 +860,9 @@ class CbuildRunDebugSequenceDelegate(DebugSequenceDelegate):
                 executed_scope = seq.execute(context)
             except exceptions.Error as err:
                 if pname:
-                    LOG.error(f"Error while running debug sequence '{name}' (core {pname}): {err}")
+                    LOG.error("Error while running debug sequence '%s' (core %s): %s", name, pname, err)
                 else:
-                    LOG.error(f"Error while running debug sequence '{name}': {err}")
+                    LOG.error("Error while running debug sequence '%s': %s", name, err)
                 raise
 
         return executed_scope
