@@ -726,18 +726,14 @@ class CbuildRunSequences:
         return self._sequences
 
     def _dbgconf_variables(self) -> Optional[Block]:
-        #TODO how to select correct debugger?
-        # Currently first debugger is selected as active
-        for debugger in self._cbuild_debugger:
-            dbgconf_file = debugger.get('dbgconf')
-            if dbgconf_file is not None:
-                try:
-                    with open(dbgconf_file) as f:
-                        dbgconf = f.read()
-                        self._debugvars_conf = Block(dbgconf, info='dbgconf')
-                except FileNotFoundError:
-                    LOG.warning(f"dbgconf file '{dbgconf_file}' was not found.")
-                break
+        dbgconf_file = self._cbuild_debugger.get('dbgconf')
+        if dbgconf_file is not None:
+            try:
+                with open(dbgconf_file) as f:
+                    dbgconf = f.read()
+                    self._debugvars_conf = Block(dbgconf, info='dbgconf')
+            except FileNotFoundError:
+                LOG.warning("dbgconf file '%s' was not found", dbgconf_file)
 
     def _build_sequences(self) -> None:
         for elem in self._cbuild_sequences:
