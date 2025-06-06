@@ -22,6 +22,8 @@ jobs:
             artifact_name: pyocd-macos
           - os: ubuntu-24.04-arm
             artifact_name: pyocd-linux-arm64
+          - os: macos-13
+            artifact_name: pyocd-macos-intel
 
     steps:
       - name: Checkout repository
