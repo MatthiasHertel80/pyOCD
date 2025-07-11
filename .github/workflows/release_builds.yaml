@@ -23,6 +23,8 @@ jobs:
             artifact_name: pyocd-macos
           - os: ubuntu-24.04-arm
             artifact_name: pyocd-linux-arm64
+          - os: windows-11-arm
+            artifact-name: pyocd-windows-arm64
 
     steps:
       - name: Checkout repository
